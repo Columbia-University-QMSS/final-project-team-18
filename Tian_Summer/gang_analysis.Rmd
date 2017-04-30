@@ -1,0 +1,245 @@
+---
+title: "Patterns by gang"
+author: "Suer Hu (sh3589)"
+date: "April 29, 2017"
+output: html_document
+---
+
+```{r}
+setwd("C:/Users/Suer Hu/Desktop/Data_Viz/Assignment/Final Project")
+rm(list = ls(all = TRUE))
+
+# library(readxl)
+# GTD <- readxl::read_excel("globalterrorismdb_0616dist.xlsx")
+
+load("GTD.RData")
+```
+
+We observed high number of incidents after 2010. Here we random picked four years to see whether there is any pattern within a year. According to the plot, there is no obvious peak for specific month for all years. This is reasonable because if the terrorism patterns are consistent over years, the police will stay alert during the days that attacks have a highly chance to happen.
+
+```{r}
+a <- GTD
+a$iday[a$iday == 0] <- NA
+a$date <- paste(a$iyear, a$imonth, a$iday, sep = "-")
+a$date <- as.Date(a$date, "%Y-%m-%d")
+
+b <- a %>% group_by(iyear, imonth) %>% summarise(count = n())
+b$month <- as.factor(b$imonth)
+
+b %>% 
+  filter(iyear %in% c(2009, 2011, 2013, 2015)) %>% 
+  ggplot(aes(x = month, y = count, group = 1)) + 
+    geom_point(color = "orange") + 
+    geom_line(color = "orange") + 
+    facet_wrap(~iyear, ncol = 1, scale = "free") + 
+    theme_hc(bgcolor = "darkunica") + 
+    scale_fill_hc("darkunica") + 
+    labs(x = "Month", y = "Number of Attacks") + 
+    ggtitle("Global Trend of Terrorism Attacks, 1970-2015") + 
+    theme(plot.title = element_text(size = 18, hjust = 0.45), 
+          strip.background = element_blank(),
+          strip.text = element_text(color = "white"))
+```
+
+
+
+
+
+
+
+
+
+
+
+Finding that top 10 gangs already account for 20% of the total attacks.
+# add arrow
+```{r}
+# gang data
+library(dplyr)
+gangs <- GTD %>%
+  group_by(gname) %>%
+  summarise(num_count = n(),
+            num_killed = sum(nkill, na.rm = TRUE),
+            num_wounded = sum(nwound, na.rm = TRUE)) %>%
+  arrange(desc(num_count)) %>%
+  mutate(rank_count = 1:length(unique(gname)), 
+         fraction_count = cumsum(num_count) / sum(num_count, na.rm = TRUE),
+         fraction_killed = cumsum(num_killed) / sum(num_killed, na.rm = TRUE),
+         fraction_wounded = cumsum(num_wounded) / sum(num_wounded, na.rm = TRUE))
+
+library(tidyverse)
+gang_plotdata <- gather(gangs, key = harm, value = number, c(6:8))
+
+gang_discriptive <- gangs %>% 
+  filter(rank_count %in% c(1, 11, 51, 101)) %>%
+  select(gname, rank_count, fraction_count, fraction_killed, fraction_wounded)
+
+# plot
+library(ggthemes)
+library(plotly)
+ggplot(gang_plotdata, aes(x = rank_count, y = number, color = harm)) +
+  geom_line(size = 1) +
+  geom_hline(yintercept = 0.45, color = "white", lty = 2) +
+  geom_hline(yintercept = 0.65, color = "white", lty = 2) +
+  geom_hline(yintercept = 0.87, color = "white", lty = 2) +
+  annotate("text", x = 3500, y = 0.5, size = 6, adj = 1, 
+           family = "serif", color = "white", label = c("Baseline")) +
+  annotate("text", x = 3500, y = 0.71, size = 6, adj = 1, 
+           family = "serif", color = "white", label = c("10 top gangs")) +
+  annotate("text", x = 3500, y = 0.93, size = 6, adj = 1, 
+           family = "serif", color = "white", label = c("100 top gangs")) +
+  theme_hc(bgcolor = "darkunica") +
+  ggtitle("Fraction of Harm Done") +
+  labs(x = "Number of Gangs", y = "Count of Bad Consequences") +
+  scale_fill_hc("darkunica") +
+  theme(plot.title = element_text(size = 18, hjust = 0.45), 
+          strip.background = element_blank(),
+          strip.text = element_text(color = "white"))
+
+```
+
+
+So we want to focus more on the top gangs to draw more conclusions. In order to determine who are the top gangs, we made an assumption to define the importance of a gang: 
+1) It is very active (has large number of attacks) 
+2) Its attacks has claimed high fatality rate
+Here is the listing of these top villans:
+
+```{r}
+gang_rank <- GTD %>%
+  group_by(gname) %>%
+  summarise(total_num_attacks = n(),
+            death_ratio = round(mean(nkill, na.rm = TRUE), digits = 1),
+            wounded_ratio = round(mean(nwound, na.rm = TRUE)), digit = 1) %>%
+  mutate(active_rank = rank(-total_num_attacks, na.last = TRUE),
+         deathratio_rank = rank(-death_ratio, na.last = TRUE),
+         woundedratio_rank = rank(-wounded_ratio, na.last = TRUE))
+
+library(DT)
+winners <- rbind(filter(gang_rank, active_rank == 2),
+                 filter(gang_rank, deathratio_rank == 1),
+                 filter(gang_rank, woundedratio_rank == 1))
+datatable(winners)
+```
+
+We can see that these three winner gangs perform their attack in different styles. Taliban has the most attacks throughout the years; Dissident Military Members of Northern Tribal Group has just one attack but killed 150 people with none survived; Aum Shinri Kyo has several attacks, wounding many people but not causing heavy fatal consequences.
+
+```{r}
+top_gang <- gang_rank %>%
+  filter(active_rank <= 50, deathratio_rank <= 500, woundedratio_rank <= 508) %>%
+  arrange(active_rank)
+datatable(top_gang)
+```
+
+We filter out 9 gangs which qualifies for "big gangs". We find that although they only account for 1% of total terrorist attacks, they are responsible for 3% of total death and 2% of total wounded.
+
+```{r}
+total <- c(nrow(GTD), 
+           sum(GTD$nkill, na.rm = TRUE), 
+           sum(GTD$nwound, na.rm = TRUE))
+
+top_gname <- top_gang$gname
+top_gang_record <- filter(GTD, gname == top_gname)
+top <- c(nrow(top_gang_record), 
+         sum(top_gang_record$nkill, na.rm = TRUE), 
+         sum(top_gang_record$nwound, na.rm = TRUE))
+
+big_small <- data.frame(feature = c("total_attack", "total_death", "total_wounded"),
+                                    total = total, top = top, percentage = round(top / total, digits = 2))
+big_small$percentage <- paste(big_small$percentage * 100, "%")
+big_small <- gather(big_small, key = scope, value = count, c(2:3))
+big_small$percentage[4:6] <- NA
+
+ggplot(big_small, aes(x = feature, y = count, fill = scope)) +
+  geom_bar(stat = "identity", position = "stack") +
+  geom_text(aes(label = percentage)) +
+  theme_hc(bgcolor = "darkunica") +
+  scale_fill_hc("darkunica") +
+  ggtitle("Percentage of Harm that Top Gangs are Responsible for") +
+  labs(x = "Type of Consequence", y = "Count") +
+  theme(plot.title = element_text(size = 18, hjust = 0.45), 
+          strip.background = element_blank(),
+          strip.text = element_text(color = "white"))
+```
+
+```{r}
+library(devtools)
+library(leaflet)
+
+library(tigris)
+countries <- rgdal::readOGR("ne_50m_admin_0_countries/ne_50m_admin_0_countries.shp")
+
+keep <- c("eventid", "iyear", "imonth", "iday", "country", "country_txt", "latitude", "longitude", "attacktype1_txt", "targtype1_txt", "gname", "weaptype1_txt", "nkill", "nwound")
+top_gang_record <- top_gang_record[ , keep]
+top_gang_record$gname <- as.factor(top_gang_record$gname)
+top_gang_record$severity <- sum(top_gang_record$nkill + top_gang_record$nwound)
+```
+
+We can see that these top gangs each has a territory of its own. 
+```{r}
+library(RColorBrewer)
+pal = colorFactor("Set1", domain = top_gang_record$gname)
+color_offsel1 <- pal(top_gang_record$gname)
+
+content <- paste("Gang Name:", top_gang_record$gname,"<br/>",
+                 "When:", top_gang_record$iyear,"<br/>",
+                 "Where:", top_gang_record$country_txt,"<br/>",
+                 "Fatality:", top_gang_record$nkill,"<br/>",
+                 "Injury:", top_gang_record$nwound, "<br/>")       
+
+gangs_map <- leaflet(top_gang_record) %>% 
+     addTiles('http://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png') %>% 
+  addCircles(col="orange") %>%
+  addCircles(color = color_offsel1) %>%
+  addCircles(color = color_offsel1, popup = content) %>%
+  addCircleMarkers(color = color_offsel1, 
+                       popup = content, radius = ~ log(nkill, 1.2), fillOpacity = 0.7)
+
+gangs_map
+```
+
+With this plot we see a clear expansion of ISIS, from limited to Iraq to spreading to Afraica and eventually France.
+```{r}
+ISIS <- GTD %>% filter(gname == c("Islamic State of Iraq and the Levant (ISIL)", 
+                                 "Islamic State of Iraq (ISI)"))
+
+content_2 <- paste("Gang Name:", ISIS$gname,"<br/>",
+                 "When:", ISIS$iyear,"<br/>",
+                 "Where:", ISIS$country_txt,"<br/>",
+                 "Fatality:", ISIS$nkill,"<br/>",
+                 "Injury:", ISIS$nwound, "<br/>")      
+
+
+ISIS_map <- leaflet(ISIS) %>% 
+     addTiles('http://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', group = "base") %>%
+  setView(lng = 35.270583, lat = 37.024090, zoom = 3.5) %>%
+  
+  addCircles(group = "Before 2012", data = filter(ISIS, iyear <= 2012), 
+             lng = ~longitude, lat = ~latitude, col="white") %>%
+  # addCircleMarkers(color = "white", popup = content_2, 
+                   # radius = ~ log(nkill, 1.2), fillOpacity = 0.7) %>%
+  
+  addCircles(group = "2013", data = filter(ISIS, iyear == 2013), 
+             lng = ~longitude, lat = ~latitude, col="yellow") %>%
+  # addCircleMarkers(color = "yellow", popup = content_2, 
+                   # radius = ~ log(nkill, 1.2), fillOpacity = 0.7) %>%
+  
+  addCircles(group = "2014", data = filter(ISIS, iyear == 2014), 
+             lng = ~longitude, lat = ~latitude, col = "orange") %>% 
+  # addCircleMarkers(color = "orange", popup = content_2, 
+                   # radius = ~ log(nkill, 1.2), fillOpacity = 0.7) %>%
+  
+  addCircles(group = "2015", data = filter(ISIS, iyear == 2015), 
+             lng = ~longitude, lat = ~latitude, col = "red") %>%
+  # addCircleMarkers(color = "red", popup = content_2, 
+                   # radius = ~ log(nkill, 1.2), fillOpacity = 0.7) %>%
+  
+   addLayersControl(
+    baseGroups = c("base"),
+    overlayGroups = c("Before 2012", "2013", "2014", "2015"),
+    options = layersControlOptions(collapsed = TRUE))
+
+ISIS_map
+```
+
+
+
