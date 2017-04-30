@@ -1,0 +1,225 @@
+---
+title: "Untitled"
+author: "DK"
+date: "4/21/2017"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggplot2)
+library(leaflet)
+library("ggthemes")
+library(plotly)
+library(xlsx)
+library(readxl)
+library(tmap)
+```
+
+```{r}
+dat <- read_excel("globalterrorismdb_0616dist.xlsx", 1)
+```
+
+# Overall Trend over time
+
+we show this plot first to show how many shit happens over the past few decades
+
+```{r}
+
+total_number = dat %>%
+  group_by(iyear) %>%
+  summarize(total_incidents = n())
+
+totaldeath = dat[ ,c("iyear", "nkill")] %>%
+  group_by(iyear) %>%
+  summarize(total_death = sum(nkill, na.rm = T))
+
+totalwound = dat[ ,c("iyear", "nwound")] %>%
+  group_by(iyear) %>%
+  summarize(total_wound = sum(nwound, na.rm = T))
+
+trend2 = matrix(c(rep(0, 270)), nrow = 135, ncol =2)
+trend2
+trend2[ , 1] =  rep(total_number$iyear, 3)
+trend2[ ,2][1:45] = total_number$total_incidents
+trend2[ ,2][46:90] = totaldeath$total_death
+trend2[ ,2][91:135] = totalwound$total_wound
+colnames(trend2) = c("iyear", "total")
+trend2
+trend2 = cbind(trend2, matrix(c(rep(0, 135))))
+trend2 = as.data.frame(trend2)
+colnames(trend2) = c("iyear", "total", "category")
+
+trend2[ ,3][1:45] = "Incidents"
+trend2[ ,3][46:90] = "Deaths"
+trend2[ ,3][91:135] = "Injuries"
+colnames(trend2) = c("iyear", "total", "category")
+
+
+trend2$category = as.factor(trend2$category)
+trend2$iyear = as.numeric(trend2$iyear)
+trend2$total = as.numeric(trend2$total)
+trend2
+
+plot1 = ggplot(trend2, aes(x = iyear, y = total, color = category)) +
+  geom_line() +
+  xlab("") +
+  ylab("Total Number of Terror Attacks") +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 18)) +
+  theme(axis.text.x = element_text(angle = 75, hjust = 1)) +
+  ggtitle("Terrorist Incidents, 1970-2015") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme_hc(bgcolor = "darkunica") +
+  scale_fill_hc("darkunica")  +
+  guides(fill=guide_legend(title=NULL)) +
+  theme(legend.position="top")
+plot1
+
+
+```
+
+# Interactive Graph
+
+```{r}
+
+dat %>%
+  filter(iyear == 2013|iyear == 2014|iyear == 2015) %>%
+  leaflet() %>%
+  addTiles('http://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png')%>%
+  addCircles(lng = ~longitude, lat = ~latitude, 
+             popup=paste(
+                "<strong>Year: </strong>", dat$iyear,
+                "<br><strong>City: </strong>", dat$city, 
+                "<br><strong>Country: </strong>", dat$country_txt, 
+                "<br><strong>Attack type: </strong>", dat$attacktype1_txt, 
+                "<br><strong>Target: </strong>", dat$targtype1_txt, 
+                " | ", dat$targsubtype1_txt, 
+                " | ", dat$target1, 
+                "<br><strong>Weapon: </strong>", dat$weaptype1_txt, 
+                "<br><strong>Gang: </strong>", dat$gname, 
+                "<br><strong>Summary: </strong>", dat$summary),
+              weight = 0.8, color="#8B1A1A", stroke = TRUE, fillOpacity = 0.6) %>%
+  setView(15, 30, zoom= 2)
+
+```
+
+# Types of Terror Attack
+
+```{r}
+newdata = dat[ ,c("iyear","attacktype1_txt", "suicide", "weaptype1_txt", "targtype1_txt")]
+attack = newdata %>%
+  group_by(iyear, attacktype1_txt) %>%
+  summarize(total = n())
+attack$attacktype1_txt = as.factor(attack$attacktype1_txt)
+levels(attack$attacktype1_txt)[levels(attack$attacktype1_txt) == "Hostage Taking (Barricade Incident)"] <- "Barricade Incident"
+levels(attack$attacktype1_txt)[levels(attack$attacktype1_txt) == "Hostage Taking (Kidnapping)"] <- "Kidnapping"
+levels(attack$attacktype1_txt)[levels(attack$attacktype1_txt) == "Hostage Taking (Kidnapping)"] <- "Kidnapping"
+levels(attack$attacktype1_txt)[levels(attack$attacktype1_txt) == "Facility/Infrastructure Attack"] <- "Facility/Infrastructure"
+
+colnames(attack)[2] = 'Attack'
+
+attack_1 <- attack %>%
+  filter(Attack != "Unknown") %>%
+  ggplot(aes(x = iyear, y = total, fill = Attack)) +
+  geom_bar(stat = "identity") +
+  theme_hc(bgcolor = "darkunica") +
+  scale_fill_hc("darkunica") +
+  xlab("") +
+  ylab("") +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 18)) +
+  theme(axis.text.x = element_text(angle = 75, hjust = 1)) +
+  ggtitle("Types of Terror Attacks") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  guides(fill=guide_legend(title=NULL)) +
+  theme(legend.position="top")
+attack_1
+
+```
+
+# Types of Target
+
+```{r}
+target = newdata %>%
+  group_by(iyear, targtype1_txt) %>%
+  summarize(total = n())
+
+target$targtype1_txt[target$targtype1_txt == 'Government (Diplomatic)'| target$targtype1_txt == 'Government (General)'] = "Government"
+target$targtype1_txt[target$targtype1_txt == 'Airports & Aircraft'] = "Transportation"
+target$targtype1_txt[target$targtype1_txt == 'Business'] = "Other"
+target$targtype1_txt[target$targtype1_txt == 'Educational Institution'] = "Other"
+target$targtype1_txt[target$targtype1_txt == 'Food or Water Supply'] = "Other"
+target$targtype1_txt[target$targtype1_txt == 'Journalists & Media'] = "Other"
+target$targtype1_txt[target$targtype1_txt == 'NGO'] = "Other"
+target$targtype1_txt[target$targtype1_txt == 'Journalists & Media'] = "Other"
+target$targtype1_txt[target$targtype1_txt == 'Religious Figures/Institutions'] = "Other"
+target$targtype1_txt[target$targtype1_txt == 'Telecommunication'] = "Other"
+target$targtype1_txt[target$targtype1_txt == 'Terrorists/Non-State Militia'] = "Other"
+target$targtype1_txt[target$targtype1_txt == 'Unknown'] = "Other"
+target$targtype1_txt[target$targtype1_txt == 'Violent Political Party'] = "Other"
+target$targtype1_txt[target$targtype1_txt == 'Maritime'] = "Other"
+target$targtype1_txt[target$targtype1_txt == 'Abortion Related'] = "Other"
+target$targtype1_txt[target$targtype1_txt == 'Tourists'] = "Other"
+target$targtype1_txt[target$targtype1_txt == 'Utilities'] = "Other"
+target$targtype1_txt[target$targtype1_txt == 'Private Citizens & Property'] = "Citizens&Property"
+
+target = target %>%
+  group_by(iyear, targtype1_txt) %>%
+  summarise(total = sum(total))
+target$targtype1_txt = as.factor(target$targtype1_txt)
+
+target_1 <- target %>%
+  ggplot(aes(x = iyear, y = total, fill = reorder(targtype1_txt, desc(total)))) +
+  geom_bar(stat = "identity") +
+  theme_hc(bgcolor = "darkunica") +
+  scale_fill_hc("darkunica") +
+  xlab("") +
+  ylab("") +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 18)) +
+  theme(axis.text.x = element_text(angle = 75, hjust = 1)) +
+  ggtitle("Types of Targets") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  guides(fill=guide_legend(title=NULL)) +
+  theme(legend.position="top")
+target_1
+```
+
+# Suicide Attacks
+
+```{r}
+
+
+
+suicide = newdata %>%
+  group_by(iyear, suicide) %>%
+  summarize(total = n())
+
+a = suicide %>%
+  filter(suicide == 1)
+b = suicide %>%
+  filter(suicide == 0)
+b = b[ , c(1,3)]
+a = a[ , c(1,3)]
+suicide2 = left_join(b, a, by = c("iyear"="iyear"))
+suicide2[is.na(suicide2)] <- 0
+suicide2 %>%
+  group_by(iyear) %>%
+  summarize(rate = total.y / total.x * 100) %>%
+  ggplot(aes(x = iyear, y = rate)) +
+  geom_line(color = "orange") + 
+  xlab("Year") +
+  ylab("Percent (%)") +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 18)) +
+  theme(axis.text.x = element_text(angle = 75, hjust = 1)) +
+  ggtitle("% of Suicide Attacks, 1970-2015") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme_hc(bgcolor = "darkunica") +
+  scale_fill_hc("darkunica") 
+  
+
+
+```
+
+
+
+
