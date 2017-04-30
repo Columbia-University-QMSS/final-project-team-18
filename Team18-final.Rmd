@@ -1,0 +1,534 @@
+---
+title: Patterns in Global Terrorism
+output: html_document
+---
+
+
+```{r, include=FALSE}
+library(dplyr)
+library(tm)
+library(tidytext)
+library(xlsx)
+library(wordcloud)
+library(plotly)
+library(ggthemes)
+library(ggplot2)
+library(leaflet)
+library(readxl)
+library(tmap)
+load("motive_tidy.rda")
+#load("/Users/Pedro/Desktop/final-project-team-18/Tian_Summer/GTD.RData")
+
+```
+
+
+```{r, echo=FALSE, warning=FALSE}
+dat <- read_excel("/Users/Pedro/Downloads/GTD_0616dist/globalterrorismdb_0616dist.xlsx", 1)
+GTD <- dat
+```
+
+# Overview of Trends
+
+We start by plotting the overall number of attacks, along with the number of death and injury incurred. 
+
+
+```{r, echo=FALSE, warning=FALSE}
+
+total_number = dat %>%
+  group_by(iyear) %>%
+  summarize(total_incidents = n())
+
+totaldeath = dat[ ,c("iyear", "nkill")] %>%
+  group_by(iyear) %>%
+  summarize(total_death = sum(nkill, na.rm = T))
+
+totalwound = dat[ ,c("iyear", "nwound")] %>%
+  group_by(iyear) %>%
+  summarize(total_wound = sum(nwound, na.rm = T))
+
+trend2 = matrix(c(rep(0, 270)), nrow = 135, ncol =2)
+trend2[ , 1] =  rep(total_number$iyear, 3)
+trend2[ ,2][1:45] = total_number$total_incidents
+trend2[ ,2][46:90] = totaldeath$total_death
+trend2[ ,2][91:135] = totalwound$total_wound
+colnames(trend2) = c("iyear", "total")
+trend2 = cbind(trend2, matrix(c(rep(0, 135))))
+trend2 = as.data.frame(trend2)
+colnames(trend2) = c("iyear", "total", "category")
+
+trend2[ ,3][1:45] = "Attacks"
+trend2[ ,3][46:90] = "Deaths"
+trend2[ ,3][91:135] = "Injuries"
+colnames(trend2) = c("iyear", "total", "category")
+
+
+trend2$category = as.factor(trend2$category)
+trend2$iyear = as.numeric(trend2$iyear)
+trend2$total = as.numeric(trend2$total)
+
+plot1 = ggplot(trend2, aes(x = iyear, y = total, color = category)) +
+  geom_line() +
+  xlab("") +
+  ylab("Total Number of Terror Attacks") +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 18)) +
+  theme(axis.text.x = element_text(angle = 75, hjust = 1)) +
+  ggtitle("Terrorist Incidents, 1970-2015") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme_hc(bgcolor = "darkunica") +
+  scale_fill_hc("darkunica")  +
+  guides(fill=guide_legend(title=NULL)) +
+  theme(legend.position="top")
+plot1
+
+
+```
+
+Below we map every single terrorist attack recorded in the GTD for the years 2013, 2014, and 2015.
+
+```{r, echo=FALSE, warning=FALSE}
+
+dat %>%
+  filter(iyear == 2013|iyear == 2014|iyear == 2015) %>%
+  leaflet() %>%
+  addTiles('http://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png')%>%
+  addCircles(lng = ~longitude, lat = ~latitude, 
+             popup=paste(
+                "<strong>Year: </strong>", dat$iyear,
+                "<br><strong>City: </strong>", dat$city, 
+                "<br><strong>Country: </strong>", dat$country_txt, 
+                "<br><strong>Attack type: </strong>", dat$attacktype1_txt, 
+                "<br><strong>Target: </strong>", dat$targtype1_txt, 
+                " | ", dat$targsubtype1_txt, 
+                " | ", dat$target1, 
+                "<br><strong>Weapon: </strong>", dat$weaptype1_txt, 
+                "<br><strong>Gang: </strong>", dat$gname, 
+                "<br><strong>Summary: </strong>", dat$summary),
+              weight = 0.8, color="#8B1A1A", stroke = TRUE, fillOpacity = 0.6) %>%
+  setView(15, 30, zoom= 2)
+
+```
+
+Here we break down the total number of attacks per year by the type of the attack. We note that bombings have increased quite a lot relative to other types of attacks.
+
+```{r, echo=FALSE, warning=FALSE}
+newdata = dat[ ,c("iyear","attacktype1_txt", "suicide", "weaptype1_txt", "targtype1_txt")]
+attack = newdata %>%
+  group_by(iyear, attacktype1_txt) %>%
+  summarize(total = n())
+attack$attacktype1_txt = as.factor(attack$attacktype1_txt)
+levels(attack$attacktype1_txt)[levels(attack$attacktype1_txt) == "Hostage Taking (Barricade Incident)"] <- "Barricade Incident"
+levels(attack$attacktype1_txt)[levels(attack$attacktype1_txt) == "Hostage Taking (Kidnapping)"] <- "Kidnapping"
+levels(attack$attacktype1_txt)[levels(attack$attacktype1_txt) == "Hostage Taking (Kidnapping)"] <- "Kidnapping"
+levels(attack$attacktype1_txt)[levels(attack$attacktype1_txt) == "Facility/Infrastructure Attack"] <- "Facility/Infrastructure"
+
+colnames(attack)[2] = 'Attack'
+
+attack_1 <- attack %>%
+  filter(Attack != "Unknown") %>%
+  ggplot(aes(x = iyear, y = total, fill = Attack)) +
+  geom_bar(stat = "identity") +
+  theme_hc(bgcolor = "darkunica") +
+  scale_fill_hc("darkunica") +
+  xlab("") +
+  ylab("") +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 18)) +
+  theme(axis.text.x = element_text(angle = 75, hjust = 1)) +
+  ggtitle("Types of Terror Attacks") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  guides(fill=guide_legend(title=NULL)) +
+  theme(legend.position="top")
+attack_1
+
+```
+
+We do the same for the types of targets that were victim to these attacks. As the plot shows, private citizens & property has experienced the largest relative increase.
+
+```{r, echo=FALSE, warning=FALSE}
+target = newdata %>%
+  group_by(iyear, targtype1_txt) %>%
+  summarize(total = n())
+
+target$targtype1_txt[target$targtype1_txt == 'Government (Diplomatic)'| target$targtype1_txt == 'Government (General)'] = "Government"
+target$targtype1_txt[target$targtype1_txt == 'Airports & Aircraft'] = "Transportation"
+target$targtype1_txt[target$targtype1_txt == 'Business'] = "Other"
+target$targtype1_txt[target$targtype1_txt == 'Educational Institution'] = "Other"
+target$targtype1_txt[target$targtype1_txt == 'Food or Water Supply'] = "Other"
+target$targtype1_txt[target$targtype1_txt == 'Journalists & Media'] = "Other"
+target$targtype1_txt[target$targtype1_txt == 'NGO'] = "Other"
+target$targtype1_txt[target$targtype1_txt == 'Journalists & Media'] = "Other"
+target$targtype1_txt[target$targtype1_txt == 'Religious Figures/Institutions'] = "Other"
+target$targtype1_txt[target$targtype1_txt == 'Telecommunication'] = "Other"
+target$targtype1_txt[target$targtype1_txt == 'Terrorists/Non-State Militia'] = "Other"
+target$targtype1_txt[target$targtype1_txt == 'Unknown'] = "Other"
+target$targtype1_txt[target$targtype1_txt == 'Violent Political Party'] = "Other"
+target$targtype1_txt[target$targtype1_txt == 'Maritime'] = "Other"
+target$targtype1_txt[target$targtype1_txt == 'Abortion Related'] = "Other"
+target$targtype1_txt[target$targtype1_txt == 'Tourists'] = "Other"
+target$targtype1_txt[target$targtype1_txt == 'Utilities'] = "Other"
+target$targtype1_txt[target$targtype1_txt == 'Private Citizens & Property'] = "Citizens&Property"
+
+target = target %>%
+  group_by(iyear, targtype1_txt) %>%
+  summarise(total = sum(total))
+target$targtype1_txt = as.factor(target$targtype1_txt)
+
+target_1 <- target %>%
+  ggplot(aes(x = iyear, y = total, fill = reorder(targtype1_txt, desc(total)))) +
+  geom_bar(stat = "identity") +
+  theme_hc(bgcolor = "darkunica") +
+  scale_fill_hc("darkunica") +
+  xlab("") +
+  ylab("") +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 18)) +
+  theme(axis.text.x = element_text(angle = 75, hjust = 1)) +
+  ggtitle("Types of Targets") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  guides(fill=guide_legend(title=NULL)) +
+  theme(legend.position="top")
+target_1
+```
+
+Interstingly, suicide attacks experienced "peak popularity" during the height of the Iraq War in 2004 - 2006.
+
+```{r, echo=FALSE, warning=FALSE}
+
+suicide = newdata %>%
+  group_by(iyear, suicide) %>%
+  summarize(total = n())
+
+a = suicide %>%
+  filter(suicide == 1)
+b = suicide %>%
+  filter(suicide == 0)
+b = b[ , c(1,3)]
+a = a[ , c(1,3)]
+suicide2 = left_join(b, a, by = c("iyear"="iyear"))
+suicide2[is.na(suicide2)] <- 0
+suicide2 %>%
+  group_by(iyear) %>%
+  summarize(rate = total.y / total.x * 100) %>%
+  ggplot(aes(x = iyear, y = rate)) +
+  geom_line(color = "orange") + 
+  xlab("Year") +
+  ylab("Percent (%)") +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 18)) +
+  theme(axis.text.x = element_text(angle = 75, hjust = 1)) +
+  ggtitle("% of Suicide Attacks, 1970-2015") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme_hc(bgcolor = "darkunica") +
+  scale_fill_hc("darkunica") 
+
+
+
+```
+
+# Patterns Across Terrorist Organizations
+
+We observed high number of incidents after 2010. Here we random picked four years to see whether there is any pattern within a year. According to the plot, there is no obvious peak for specific month for all years. This is reasonable because if the terrorism patterns are consistent over years, the police will stay alert during the days that attacks have a highly chance to happen.
+
+```{r, echo=FALSE, warning=FALSE}
+a <- GTD
+a$iday[a$iday == 0] <- NA
+a$date <- paste(a$iyear, a$imonth, a$iday, sep = "-")
+a$date <- as.Date(a$date, "%Y-%m-%d")
+
+b <- a %>% group_by(iyear, imonth) %>% summarise(count = n())
+b$month <- as.factor(b$imonth)
+
+b %>% 
+  filter(iyear %in% c(2009, 2011, 2013, 2015)) %>% 
+  ggplot(aes(x = month, y = count, group = 1)) + 
+    geom_point(color = "orange") + 
+    geom_line(color = "orange") + 
+    facet_wrap(~iyear, ncol = 1, scale = "free") + 
+    theme_hc(bgcolor = "darkunica") + 
+    scale_fill_hc("darkunica") + 
+    labs(x = "Month", y = "Number of Attacks") + 
+    ggtitle("Global Trend of Terrorism Attacks, 1970-2015") + 
+    theme(plot.title = element_text(size = 18, hjust = 0.45), 
+          strip.background = element_blank(),
+          strip.text = element_text(color = "white"))
+```
+
+
+
+Finding that top 10 terrorist organization already account for 20% of the total attacks.
+
+```{r, echo=FALSE, warning=FALSE}
+# gang data
+library(dplyr)
+gangs <- GTD %>%
+  group_by(gname) %>%
+  summarise(num_count = n(),
+            num_killed = sum(nkill, na.rm = TRUE),
+            num_wounded = sum(nwound, na.rm = TRUE)) %>%
+  arrange(desc(num_count)) %>%
+  mutate(rank_count = 1:length(unique(gname)), 
+         fraction_count = cumsum(num_count) / sum(num_count, na.rm = TRUE),
+         fraction_killed = cumsum(num_killed) / sum(num_killed, na.rm = TRUE),
+         fraction_wounded = cumsum(num_wounded) / sum(num_wounded, na.rm = TRUE))
+
+library(tidyverse)
+gang_plotdata <- gather(gangs, key = harm, value = number, c(6:8))
+
+gang_discriptive <- gangs %>% 
+  filter(rank_count %in% c(1, 11, 51, 101)) %>%
+  select(gname, rank_count, fraction_count, fraction_killed, fraction_wounded)
+
+# plot
+library(ggthemes)
+library(plotly)
+ggplot(gang_plotdata, aes(x = rank_count, y = number, color = harm)) +
+  geom_line(size = 1) +
+  geom_hline(yintercept = 0.45, color = "white", lty = 2) +
+  geom_hline(yintercept = 0.65, color = "white", lty = 2) +
+  geom_hline(yintercept = 0.87, color = "white", lty = 2) +
+  annotate("text", x = 3500, y = 0.5, size = 6, adj = 1, 
+           family = "serif", color = "white", label = c("Baseline")) +
+  annotate("text", x = 3500, y = 0.71, size = 6, adj = 1, 
+           family = "serif", color = "white", label = c("10 top gangs")) +
+  annotate("text", x = 3500, y = 0.93, size = 6, adj = 1, 
+           family = "serif", color = "white", label = c("100 top gangs")) +
+  theme_hc(bgcolor = "darkunica") +
+  ggtitle("Fraction of Harm Done") +
+  labs(x = "Number of Gangs", y = "Count of Bad Consequences") +
+  scale_fill_hc("darkunica") +
+  theme(plot.title = element_text(size = 18, hjust = 0.45), 
+          strip.background = element_blank(),
+          strip.text = element_text(color = "white"))
+
+```
+
+
+So we want to focus more on the top terrorist organizations to draw more conclusions. In order to determine who are the top gangs, we made an assumption to define the importance of a particular organization: 
+
+1) It is very active (has large number of attacks) 
+2) Its attacks have high fatality rate
+
+Here is the listing of these top offenders:
+
+```{r, echo=FALSE, warning=FALSE}
+gang_rank <- GTD %>%
+  group_by(gname) %>%
+  summarise(total_num_attacks = n(),
+            death_ratio = round(mean(nkill, na.rm = TRUE), digits = 1),
+            wounded_ratio = round(mean(nwound, na.rm = TRUE)), digit = 1) %>%
+  mutate(active_rank = rank(-total_num_attacks, na.last = TRUE),
+         deathratio_rank = rank(-death_ratio, na.last = TRUE),
+         woundedratio_rank = rank(-wounded_ratio, na.last = TRUE))
+
+library(DT)
+winners <- rbind(filter(gang_rank, active_rank == 2),
+                 filter(gang_rank, deathratio_rank == 1),
+                 filter(gang_rank, woundedratio_rank == 1))
+datatable(winners)
+```
+
+We can see that these three winner gangs perform their attack in different styles. Taliban has the most attacks throughout the years; Dissident Military Members of Northern Tribal Group has just one attack but killed 150 people with none survived; Aum Shinri Kyo has several attacks, wounding many people but not causing heavy fatal consequences.
+
+```{r, echo=FALSE, warning=FALSE}
+top_gang <- gang_rank %>%
+  filter(active_rank <= 50, deathratio_rank <= 500, woundedratio_rank <= 508) %>%
+  arrange(active_rank)
+datatable(top_gang)
+```
+
+We filter out 9 gangs which qualifies for "big gangs". We find that although they only account for 1% of total terrorist attacks, they are responsible for 3% of total death and 2% of total wounded.
+
+```{r, echo=FALSE, warning=FALSE}
+total <- c(nrow(GTD), 
+           sum(GTD$nkill, na.rm = TRUE), 
+           sum(GTD$nwound, na.rm = TRUE))
+
+top_gname <- top_gang$gname
+top_gang_record <- filter(GTD, gname == top_gname)
+top <- c(nrow(top_gang_record), 
+         sum(top_gang_record$nkill, na.rm = TRUE), 
+         sum(top_gang_record$nwound, na.rm = TRUE))
+
+big_small <- data.frame(feature = c("total_attack", "total_death", "total_wounded"),
+                                    total = total, top = top, percentage = round(top / total, digits = 2))
+big_small$percentage <- paste(big_small$percentage * 100, "%")
+big_small <- gather(big_small, key = scope, value = count, c(2:3))
+big_small$percentage[4:6] <- NA
+
+ggplot(big_small, aes(x = feature, y = count, fill = scope)) +
+  geom_bar(stat = "identity", position = "stack") +
+  geom_text(aes(label = percentage)) +
+  theme_hc(bgcolor = "darkunica") +
+  scale_fill_hc("darkunica") +
+  ggtitle("Percentage of Harm that Top Gangs are Responsible for") +
+  labs(x = "Type of Consequence", y = "Count") +
+  theme(plot.title = element_text(size = 18, hjust = 0.45), 
+          strip.background = element_blank(),
+          strip.text = element_text(color = "white"))
+```
+
+```{r, echo=FALSE, warning=FALSE}
+library(devtools)
+library(leaflet)
+
+
+keep <- c("eventid", "iyear", "imonth", "iday", "country", "country_txt", "latitude", "longitude", "attacktype1_txt", "targtype1_txt", "gname", "weaptype1_txt", "nkill", "nwound")
+top_gang_record <- top_gang_record[ , keep]
+top_gang_record$gname <- as.factor(top_gang_record$gname)
+top_gang_record$severity <- sum(top_gang_record$nkill + top_gang_record$nwound)
+```
+
+We can see that these top gangs each has a territory of its own. 
+```{r, echo=FALSE, warning=FALSE}
+library(RColorBrewer)
+pal = colorFactor("Set1", domain = top_gang_record$gname)
+color_offsel1 <- pal(top_gang_record$gname)
+
+content <- paste("Gang Name:", top_gang_record$gname,"<br/>",
+                 "When:", top_gang_record$iyear,"<br/>",
+                 "Where:", top_gang_record$country_txt,"<br/>",
+                 "Fatality:", top_gang_record$nkill,"<br/>",
+                 "Injury:", top_gang_record$nwound, "<br/>")       
+
+gangs_map <- leaflet(top_gang_record) %>% 
+     addTiles('http://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png') %>% 
+  addCircles(col="orange") %>%
+  addCircles(color = color_offsel1) %>%
+  addCircles(color = color_offsel1, popup = content) %>%
+  addCircleMarkers(color = color_offsel1, 
+                       popup = content, radius = ~ log(nkill, 1.2), fillOpacity = 0.7)
+
+gangs_map
+```
+
+With this plot we see a clear expansion of ISIS, from limited to Iraq to spreading to Afraica and eventually France.
+```{r, echo=FALSE, warning=FALSE}
+ISIS <- GTD %>% filter(gname == c("Islamic State of Iraq and the Levant (ISIL)", 
+                                 "Islamic State of Iraq (ISI)"))
+
+content_2 <- paste("Gang Name:", ISIS$gname,"<br/>",
+                 "When:", ISIS$iyear,"<br/>",
+                 "Where:", ISIS$country_txt,"<br/>",
+                 "Fatality:", ISIS$nkill,"<br/>",
+                 "Injury:", ISIS$nwound, "<br/>")      
+
+
+ISIS_map <- leaflet(ISIS) %>% 
+     addTiles('http://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', group = "base") %>%
+  setView(lng = 35.270583, lat = 37.024090, zoom = 3.5) %>%
+  
+  addCircles(group = "Before 2012", data = filter(ISIS, iyear <= 2012), 
+             lng = ~longitude, lat = ~latitude, col="white") %>%
+  # addCircleMarkers(color = "white", popup = content_2, 
+                   # radius = ~ log(nkill, 1.2), fillOpacity = 0.7) %>%
+  
+  addCircles(group = "2013", data = filter(ISIS, iyear == 2013), 
+             lng = ~longitude, lat = ~latitude, col="yellow") %>%
+  # addCircleMarkers(color = "yellow", popup = content_2, 
+                   # radius = ~ log(nkill, 1.2), fillOpacity = 0.7) %>%
+  
+  addCircles(group = "2014", data = filter(ISIS, iyear == 2014), 
+             lng = ~longitude, lat = ~latitude, col = "orange") %>% 
+  # addCircleMarkers(color = "orange", popup = content_2, 
+                   # radius = ~ log(nkill, 1.2), fillOpacity = 0.7) %>%
+  
+  addCircles(group = "2015", data = filter(ISIS, iyear == 2015), 
+             lng = ~longitude, lat = ~latitude, col = "red") %>%
+  # addCircleMarkers(color = "red", popup = content_2, 
+                   # radius = ~ log(nkill, 1.2), fillOpacity = 0.7) %>%
+  
+   addLayersControl(
+    baseGroups = c("base"),
+    overlayGroups = c("Before 2012", "2013", "2014", "2015"),
+    options = layersControlOptions(collapsed = TRUE))
+
+ISIS_map
+```
+
+
+
+# Text Analysis
+
+These are the most common terms used to describe the motive of a terrorist attack in the GTD.
+
+```{r, echo=FALSE, warning=FALSE}
+popular <- motive_tidy %>% group_by(term) %>% summarize(count = n()) %>% arrange(desc(count))
+popular <- popular[-(1:3), ]
+wordcloud(popular$term, popular$count, max.words = 100, colors = "black")
+```
+
+In the 1970s, the most common terms looked something like this.
+
+```{r, echo=FALSE, warning=FALSE}
+m1970 <- motive_tidy %>% filter(year == 1970) %>% group_by(term) %>% summarize(count = n()) %>% arrange(desc(count))
+wordcloud(m1970$term, m1970$count, max.words = 100, colors = "red") # wordcloud for year 1970
+```
+
+This is what the most common terms looked like in 2015.
+
+```{r, echo=FALSE, warning=FALSE}
+m2015 <- motive_tidy %>% filter(year == 2015) %>% group_by(term) %>% summarize(count = n()) %>% arrange(desc(count))
+m2015 <- m2015[-1, ]
+wordcloud(m2015$term, m2015$count, max.words = 100, colors = "blue") # wordcloud for year 2015
+```
+
+We also take a look at some interesting trends in the frequency of words over time.
+
+```{r, echo=FALSE, warning=FALSE}
+
+islamic_time <- motive_tidy %>% filter(term == "islamic" | term == "islam") %>% group_by(year) %>% summarize(count = n())
+g1 <- ggplot(islamic_time) + geom_line(aes(x = year, y = count, color = "red")) + # plot popularity of 'islam(ic)' over time
+  xlab("") + ylab("frequency") + theme_economist(base_family = "Verdana") + labs(title = "frequency of the word 'islam' or 'islamic'") +
+  theme(legend.position = "none")
+ggplotly(g1)
+
+```
+
+```{r, echo=FALSE, warning=FALSE}
+protest_time <- motive_tidy %>% filter(term == "protest") %>% group_by(year) %>% summarize(count = n())
+g2 <- ggplot(protest_time) + geom_line(aes(x = year, y = count, color = "blue")) + # plot popularity of 'protest' over time
+  xlab("") + ylab("frequency") + theme_economist(base_family = "Verdana") + labs(title = "frequency of the word 'protest'") +
+  theme(legend.position = "none")
+ggplotly(g2)
+
+```
+
+
+```{r, echo = FALSE, warning=FALSE}
+gov_time <- motive_tidy %>% filter(term == "government") %>% group_by(year) %>% summarize(count = n())
+g3 <- ggplot(gov_time) + geom_line(aes(x = year, y = count)) + 
+  xlab("") + ylab("frequency") + theme_economist(base_family = "Verdana") + labs(title = "frequency of the word 'government'") +
+  theme(legend.position = "none")
+ggplotly(g3)
+
+```
+
+
+```{r, echo=FALSE, warning=FALSE}
+police_time <- motive_tidy %>% filter(term == "police") %>% group_by(year) %>% summarize(count = n())
+g4 <- ggplot(police_time) + geom_line(aes(x = year, y = count, color = "green")) + 
+  xlab("") + ylab("frequency") + theme_economist(base_family = "Verdana") + labs(title = "frequency of the word 'police'") +
+  theme(legend.position = "none")
+ggplotly(g4)
+
+```
+
+Finally, we can also look at the most popular terms used to describe the motives of the largest terrorist organizations.
+
+```{r, echo=FALSE, warning=FALSE}
+t <- motive_tidy %>% filter(gname == "Taliban") %>% group_by(term) %>% summarize(count = n()) %>% arrange(desc(count))
+taliban <- t[-c(1:4), ][1:10, ]
+t_plot <- ggplot(taliban, aes(x = reorder(factor(term), count), y = count, fill = count)) + geom_bar(stat = "identity") + xlab("") + coord_flip() + ylab("frequency") +
+  theme_economist(base_family = "Verdana") + labs(title = "common motives for the Taliban") + theme(legend.position = "none")
+ggplotly(t_plot)
+
+i <- motive_tidy %>% filter(gname == "Islamic State of Iraq and the Levant (ISIL)") %>% group_by(term) %>% summarize(count = n()) %>% arrange(desc(count))
+isil <- i[-1, ][1:10, ]
+i_plot <- ggplot(isil, aes(x = reorder(factor(term), count), y = count, fill = count)) + geom_bar(stat = "identity") + xlab("") + coord_flip() + ylab("frequency") +
+  theme_economist(base_family = "Verdana") + labs(title = "common motives for ISIL") + theme(legend.position = "none")
+ggplotly(i_plot)
+
+b <- motive_tidy %>% filter(gname == "Boko Haram") %>% group_by(term) %>% summarize(count = n()) %>% arrange(desc(count))
+boko <- b[-c(1:11), ][1:10, ] %>% arrange(desc(count))
+b_plot <- ggplot(boko, aes(x = reorder(factor(term), count), y = count, fill = count)) + geom_bar(stat = "identity") + xlab("") + coord_flip() + ylab("frequency") +
+  theme_economist(base_family = "Verdana") + labs(title = "common motives for Boko Haram") + theme(legend.position = "none")
+ggplotly(b_plot)
+```
+
