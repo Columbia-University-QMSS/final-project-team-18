@@ -97,12 +97,8 @@ dat %>%
                 "<br><strong>City: </strong>", dat$city, 
                 "<br><strong>Country: </strong>", dat$country_txt, 
                 "<br><strong>Attack type: </strong>", dat$attacktype1_txt, 
-                "<br><strong>Target: </strong>", dat$targtype1_txt, 
-                " | ", dat$targsubtype1_txt, 
-                " | ", dat$target1, 
-                "<br><strong>Weapon: </strong>", dat$weaptype1_txt, 
-                "<br><strong>Gang: </strong>", dat$gname, 
-                "<br><strong>Summary: </strong>", dat$summary),
+                "<br><strong>Target: </strong>", dat$targtype1_txt,
+                "<br><strong>Gang: </strong>", dat$gname
               weight = 0.8, color="#8B1A1A", stroke = TRUE, fillOpacity = 0.6) %>%
   setView(15, 30, zoom= 2)
 
